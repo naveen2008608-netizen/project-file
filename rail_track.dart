@@ -1,12 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
-void main() {
-  runApp(const MaterialApp(
-    home: TrackDefectScreen(),
-    debugShowCheckedModeBanner: false,
-  ));
-}
+import 'api.dart';
 
 class TrackDefectScreen extends StatefulWidget {
   const TrackDefectScreen({super.key});
@@ -16,82 +11,165 @@ class TrackDefectScreen extends StatefulWidget {
 }
 
 class _TrackDefectScreenState extends State<TrackDefectScreen> {
-  // Region Selection
-  String selectedRegion = 'Southern Region';
-  final List<String> regions = [
-    'Southern Region',
-    'Northern Region',
-    'Eastern Region',
-    'Western Region'
+  String selectedRegion = 'Southern Railway';
+
+  int trackAgeYears = 0;
+
+  double repairCostLakhs = 0;
+
+  int internalFlawCount = 0;
+
+  bool dangerLevel = false;
+
+  bool isLoading = true;
+
+  String? errorMessage;
+
+  final List<FlSpot> ultrasonicData = [
+    const FlSpot(0, 1.2),
+
+    const FlSpot(2, 1.5),
+
+    const FlSpot(4, 1.1),
+
+    const FlSpot(6, 4.8),
+
+    const FlSpot(8, 2.0),
+
+    const FlSpot(10, 5.5),
   ];
 
-  // Track Parameters
-  int trackAgeYears = 14;
-  double repairCostLakhs = 18.5;
-  int internalFlawCount = 7; // Triggers warning if > 3
-  bool isDangerLevel = true; // Danger level switch based on ultrasonic severity
+  @override
+  void initState() {
+    super.initState();
+
+    loadTrackData();
+  }
+
+  // =========================================================
+  // GET TRACK DATA
+  // =========================================================
+
+  Future<void> loadTrackData() async {
+    setState(() {
+      isLoading = true;
+
+      errorMessage = null;
+    });
+
+    try {
+      final response = await ApiService.getTrackDefects();
+
+      final data = response['data'] as Map<String, dynamic>;
+
+      setState(() {
+        selectedRegion = data['region'] ?? 'Southern Railway';
+
+        trackAgeYears = data['track_age_years'] ?? 0;
+
+        repairCostLakhs = (data['repair_cost_lakhs'] ?? 0).toDouble();
+
+        internalFlawCount = data['internal_flaw_count'] ?? 0;
+
+        dangerLevel = data['danger_level'] == true;
+
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+
+        errorMessage = e.toString();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F9),
+      backgroundColor: const Color(0xFFF1F5F9),
+
       appBar: AppBar(
+        backgroundColor: const Color(0xFF0F172A),
+
+        foregroundColor: Colors.white,
+
         title: const Text(
           'Track Defect Monitor',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: const Color(0xFF1E293B),
-        elevation: 0,
+
+        actions: [
+          IconButton(onPressed: loadTrackData, icon: const Icon(Icons.refresh)),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildRegionSelector(),
-            const SizedBox(height: 16),
-            if (internalFlawCount > 3) _buildWarningBanner(),
-            const SizedBox(height: 16),
-            _buildUltrasonicGraphCard(),
-            const SizedBox(height: 16),
-            _buildMetricsBar(),
-            const SizedBox(height: 16),
-            _buildProfileAndReportBars(),
-          ],
-        ),
-      ),
+
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : errorMessage != null
+          ? _buildError()
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+
+              child: Column(
+                children: [
+                  _buildRegionCard(),
+
+                  const SizedBox(height: 16),
+
+                  _buildWarningCard(),
+
+                  const SizedBox(height: 16),
+
+                  _buildUltrasonicCard(),
+
+                  const SizedBox(height: 16),
+
+                  _buildMetrics(),
+
+                  const SizedBox(height: 16),
+
+                  _buildDangerCard(),
+                ],
+              ),
+            ),
     );
   }
 
-  // Region Selector Dropdown
-  Widget _buildRegionSelector() {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  // =========================================================
+  // ERROR
+  // =========================================================
+
+  Widget _buildError() {
+    return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        padding: const EdgeInsets.all(24),
+
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+
           children: [
+            const Icon(Icons.cloud_off, size: 60, color: Colors.red),
+
+            const SizedBox(height: 16),
+
             const Text(
-              'Select Region:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              'Unable to load track data',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            DropdownButton<String>(
-              value: selectedRegion,
-              underline: const SizedBox(),
-              items: regions.map((String region) {
-                return DropdownMenuItem<String>(
-                  value: region,
-                  child: Text(region),
-                );
-              }).toList(),
-              onChanged: (String? newValue) {
-                if (newValue != null) {
-                  setState(() {
-                    selectedRegion = newValue;
-                  });
-                }
-              },
+
+            const SizedBox(height: 10),
+
+            Text(errorMessage ?? '', textAlign: TextAlign.center),
+
+            const SizedBox(height: 20),
+
+            ElevatedButton.icon(
+              onPressed: loadTrackData,
+
+              icon: const Icon(Icons.refresh),
+
+              label: const Text('Retry'),
             ),
           ],
         ),
@@ -99,34 +177,91 @@ class _TrackDefectScreenState extends State<TrackDefectScreen> {
     );
   }
 
-  // Warning Banner for Internal Flaws
-  Widget _buildWarningBanner() {
+  // =========================================================
+  // REGION
+  // =========================================================
+
+  Widget _buildRegionCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+
+        child: Row(
+          children: [
+            const Icon(Icons.location_on, color: Colors.blue),
+
+            const SizedBox(width: 10),
+
+            const Text(
+              'Region:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(width: 10),
+
+            Expanded(
+              child: Text(
+                selectedRegion,
+
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =========================================================
+  // WARNING
+  // =========================================================
+
+  Widget _buildWarningCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+
+      padding: const EdgeInsets.all(16),
+
       decoration: BoxDecoration(
-        color: Colors.amber.shade100,
-        border: Border.all(color: Colors.amber.shade800),
-        borderRadius: BorderRadius.circular(12),
+        color: dangerLevel ? Colors.red.shade50 : Colors.green.shade50,
+
+        borderRadius: BorderRadius.circular(14),
+
+        border: Border.all(color: dangerLevel ? Colors.red : Colors.green),
       ),
+
       child: Row(
         children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900, size: 28),
+          Icon(
+            dangerLevel ? Icons.warning : Icons.check_circle,
+
+            color: dangerLevel ? Colors.red : Colors.green,
+
+            size: 30,
+          ),
+
           const SizedBox(width: 12),
+
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+
               children: [
                 Text(
-                  'FLAW WARNING DETECTED',
+                  dangerLevel ? 'DEFECT WARNING' : 'TRACK CONDITION NORMAL',
+
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: Colors.amber.shade900,
+
+                    color: dangerLevel ? Colors.red : Colors.green,
                   ),
                 ),
+
+                const SizedBox(height: 4),
+
                 Text(
-                  '$internalFlawCount internal flaws found in $selectedRegion. Immediate ultrasonic scan re-check advised.',
-                  style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+                  '$internalFlawCount internal '
+                  'flaws detected.',
                 ),
               ],
             ),
@@ -136,57 +271,69 @@ class _TrackDefectScreenState extends State<TrackDefectScreen> {
     );
   }
 
-  // Ultrasonic Track Monitor Line Chart
-  Widget _buildUltrasonicGraphCard() {
+  // =========================================================
+  // ULTRASONIC GRAPH
+  // =========================================================
+
+  Widget _buildUltrasonicCard() {
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
+
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Ultrasonic Track Monitor',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                Chip(
-                  label: const Text('Live Signal (dB)'),
-                  backgroundColor: Colors.blue.shade50,
-                  labelStyle: const TextStyle(fontSize: 10, color: Colors.blue),
-                )
-              ],
+            const Text(
+              'Ultrasonic Rail Inspection',
+
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
+
+            const SizedBox(height: 5),
+
+            const Text(
+              'Ultrasonic signal response',
+              style: TextStyle(color: Colors.grey),
+            ),
+
             const SizedBox(height: 20),
+
             SizedBox(
-              height: 180,
+              height: 220,
+
               child: LineChart(
                 LineChartData(
-                  gridData: const FlGridData(show: true, drawVerticalLine: false),
+                  gridData: const FlGridData(show: true),
+
                   titlesData: const FlTitlesData(
-                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+
+                    rightTitles: AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
                   ),
-                  borderData: FlBorderData(show: false),
+
+                  borderData: FlBorderData(show: true),
+
                   lineBarsData: [
                     LineChartBarData(
-                      spots: const [
-                        FlSpot(0, 1.2),
-                        FlSpot(2, 1.5),
-                        FlSpot(4, 1.1),
-                        FlSpot(6, 4.8), // Defect spike
-                        FlSpot(8, 2.0),
-                        FlSpot(10, 5.5), // High severity flaw spike
-                      ],
+                      spots: ultrasonicData,
+
                       isCurved: true,
-                      color: Colors.redAccent,
+
+                      color: Colors.red,
+
                       barWidth: 3,
+
                       dotData: const FlDotData(show: true),
+
                       belowBarData: BarAreaData(
                         show: true,
-                        color: Colors.redAccent.withOpacity(0.15),
+
+                        color: Colors.red.withValues(alpha: 0.12),
                       ),
                     ),
                   ],
@@ -199,156 +346,130 @@ class _TrackDefectScreenState extends State<TrackDefectScreen> {
     );
   }
 
-  // Metrics: Track Age & Maintenance Cost
-  Widget _buildMetricsBar() {
+  // =========================================================
+  // METRICS
+  // =========================================================
+
+  Widget _buildMetrics() {
     return Row(
       children: [
         Expanded(
-          child: _buildMetricTile(
+          child: _metricCard(
             title: 'Track Age',
+
             value: '$trackAgeYears Years',
+
             icon: Icons.history,
-            color: Colors.indigo,
+
+            color: Colors.blue,
           ),
         ),
+
         const SizedBox(width: 12),
+
         Expanded(
-          child: _buildMetricTile(
+          child: _metricCard(
             title: 'Repair Cost',
-            value: '₹$repairCostLakhs L',
-            icon: Icons.payments_outlined,
-            color: Colors.teal,
+
+            value: '₹${repairCostLakhs.toStringAsFixed(1)} L',
+
+            icon: Icons.currency_rupee,
+
+            color: Colors.orange,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildMetricTile({
+  Widget _metricCard({
     required String title,
+
     required String value,
+
     required IconData icon,
+
     required Color color,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: color.withOpacity(0.1),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              Text(
-                value,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ],
-          )
-        ],
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+
+          children: [
+            Icon(icon, color: color),
+
+            const SizedBox(height: 10),
+
+            Text(
+              title,
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+
+            const SizedBox(height: 5),
+
+            Text(
+              value,
+
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  // Profile Bar & Report Status Bar
-  Widget _buildProfileAndReportBars() {
-    return Column(
-      children: [
-        // Track Profile Health Bar
-        Card(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  // =========================================================
+  // DANGER
+  // =========================================================
+
+  Widget _buildDangerCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+
+          children: [
+            const Text(
+              'Automated Inspection Result',
+
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
               children: [
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Track Structural Profile Bar',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Text('68% Integrity', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
+                Icon(
+                  dangerLevel ? Icons.dangerous : Icons.verified,
+
+                  color: dangerLevel ? Colors.red : Colors.green,
+
+                  size: 30,
                 ),
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: const LinearProgressIndicator(
-                    value: 0.68,
-                    minHeight: 12,
-                    backgroundColor: Color(0xFFE2E8F0),
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.orangeAccent),
+
+                const SizedBox(width: 10),
+
+                Expanded(
+                  child: Text(
+                    dangerLevel
+                        ? 'High-risk rail condition. '
+                              'Inspection required.'
+                        : 'Rail condition is within '
+                              'normal operating limits.',
+
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
-          ),
+          ],
         ),
-        const SizedBox(height: 12),
-        // Report Level Status Bar (Danger Indicator)
-        Card(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Report Severity Level',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isDangerLevel ? Colors.red : Colors.green,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        isDangerLevel ? 'DANGER LEVEL' : 'SAFE LEVEL',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isDangerLevel
-                      ? 'Critical internal cracks detected via Ultrasonic sensor. Immediate speed restriction required.'
-                      : 'Track condition within acceptable risk tolerance.',
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
