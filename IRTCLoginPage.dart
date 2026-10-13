@@ -1,6 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:video_player/video_player.dart'; // NEW (video background)
+
 import 'api.dart';
 import 'rail_track.dart';
 import 'track_mentor.dart';
@@ -33,6 +36,10 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
   bool _passwordVisible = false;
   bool _isLoading = false;
 
+  // NEW: video background state
+  VideoPlayerController? _videoController;
+  bool _videoReady = false;
+
   String _selectedBranch = 'Track Detector';
 
   final List<String> _branches = [
@@ -52,14 +59,43 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
     });
 
     _getLiveLocation();
+    _initVideo(); // NEW
   }
 
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _videoController?.dispose(); // NEW
     _userIdController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  // NEW: load and loop the background video (muted)
+  Future<void> _initVideo() async {
+    try {
+      final controller = VideoPlayerController.asset(
+        'assets/videos/train.mp4',
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+      );
+
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.setVolume(0);
+      await controller.play();
+
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _videoController = controller;
+        _videoReady = true;
+      });
+    } catch (e) {
+      // If the video fails, the image/gradient background is used instead.
+    }
   }
 
   void _updateDateTime() {
@@ -240,60 +276,77 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
     }
   }
 
+  // Fallback gradient if both video and image are missing
+  Widget _fallbackBackground(bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [Color(0xFF020817), Color(0xFF08243D), Color(0xFF001018)]
+              : const [Color(0xFFE8F4FF), Color(0xFFD4EAFE), Color(0xFFF5FAFF)],
+        ),
+      ),
+    );
+  }
+
+  // NEW: video if ready, otherwise the photo, otherwise the gradient
+  Widget _buildBackground(bool isDark) {
+    if (_videoReady && _videoController != null) {
+      return FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: _videoController!.value.size.width,
+          height: _videoController!.value.size.height,
+          child: VideoPlayer(_videoController!),
+        ),
+      );
+    }
+
+    return Image.asset(
+      'assets/images/vande_bharat.jpg',
+      fit: BoxFit.cover,
+      alignment: Alignment.centerLeft,
+      errorBuilder: (context, error, stackTrace) => _fallbackBackground(isDark),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = widget.isDarkMode;
+
+    const textShadow = [
+      Shadow(color: Colors.black54, blurRadius: 8, offset: Offset(0, 2)),
+    ];
 
     return Scaffold(
       body: Stack(
         children: [
           // =====================================================
-          // DIGITAL RAILWAY STYLE BACKGROUND
-          // NO IMAGE FILE REQUIRED
+          // BACKGROUND - TRAIN VIDEO (fallback: photo, then gradient)
           // =====================================================
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? const [
-                        Color(0xFF020817),
-                        Color(0xFF08243D),
-                        Color(0xFF001018),
-                      ]
-                    : const [
-                        Color(0xFFE8F4FF),
-                        Color(0xFFD4EAFE),
-                        Color(0xFFF5FAFF),
-                      ],
-              ),
-            ),
-          ),
+          Positioned.fill(child: _buildBackground(isDark)),
 
-          // Railway-style glowing circles
-          Positioned(
-            top: -120,
-            right: -80,
+          // Overlay for readability
+          Positioned.fill(
             child: Container(
-              width: 320,
-              height: 320,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.blue.withValues(alpha: 0.12),
-              ),
-            ),
-          ),
-
-          Positioned(
-            bottom: -150,
-            left: -100,
-            child: Container(
-              width: 380,
-              height: 380,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.cyan.withValues(alpha: 0.08),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDark
+                      ? [
+                          Colors.black.withValues(alpha: 0.35),
+                          Colors.black.withValues(alpha: 0.50),
+                          Colors.black.withValues(alpha: 0.75),
+                        ]
+                      : [
+                          Colors.black.withValues(alpha: 0.15),
+                          Colors.black.withValues(alpha: 0.25),
+                          Colors.black.withValues(alpha: 0.50),
+                        ],
+                ),
               ),
             ),
           ),
@@ -315,35 +368,28 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
                     ),
                     child: Column(
                       children: [
-                        // =================================================
-                        // TOP BAR
-                        // =================================================
+                        // TOP BAR (location + theme toggle)
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _infoCard(
-                              icon: Icons.access_time,
-                              title: _currentTime,
-                              subtitle: _currentDate,
-                              isDark: isDark,
+                            Flexible(
+                              child: _infoCard(
+                                icon: Icons.location_on,
+                                title: 'LIVE LOCATION',
+                                subtitle: _locationText,
+                                isDark: isDark,
+                              ),
                             ),
-
-                            _infoCard(
-                              icon: Icons.location_on,
-                              title: 'LIVE LOCATION',
-                              subtitle: _locationText,
-                              isDark: isDark,
-                            ),
-
                             IconButton(
                               onPressed: widget.onToggleTheme,
                               style: IconButton.styleFrom(
-                                backgroundColor: isDark
-                                    ? Colors.white.withValues(alpha: 0.08)
-                                    : Colors.black.withValues(alpha: 0.06),
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.18,
+                                ),
                               ),
                               icon: Icon(
                                 isDark ? Icons.light_mode : Icons.dark_mode,
+                                color: Colors.white,
                               ),
                             ),
                           ],
@@ -351,20 +397,24 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
 
                         const SizedBox(height: 28),
 
-                        // =================================================
                         // HEADER
-                        // =================================================
-                        const Icon(Icons.train, size: 62, color: Colors.blue),
+                        const Icon(
+                          Icons.train,
+                          size: 66,
+                          color: Colors.white,
+                          shadows: textShadow,
+                        ),
 
                         const SizedBox(height: 10),
 
-                        Text(
+                        const Text(
                           'IRTC',
                           style: TextStyle(
-                            fontSize: 38,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 5,
-                            color: isDark ? Colors.white : Colors.black87,
+                            fontSize: 42,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 8,
+                            color: Colors.white,
+                            shadows: textShadow,
                           ),
                         ),
 
@@ -375,38 +425,35 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            letterSpacing: 2,
-                            color: isDark
-                                ? Colors.blue.shade200
-                                : Colors.blue.shade800,
+                            letterSpacing: 3,
+                            color: Colors.blue.shade100,
+                            shadows: textShadow,
                           ),
                         ),
 
                         const SizedBox(height: 26),
 
-                        // =================================================
                         // LOGIN CARD
-                        // =================================================
                         Container(
                           width: double.infinity,
                           constraints: const BoxConstraints(maxWidth: 520),
                           padding: const EdgeInsets.all(26),
                           decoration: BoxDecoration(
                             color: isDark
-                                ? Colors.white.withValues(alpha: 0.07)
-                                : Colors.white.withValues(alpha: 0.88),
+                                ? Colors.black.withValues(alpha: 0.55)
+                                : Colors.white.withValues(alpha: 0.92),
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
                               color: isDark
-                                  ? Colors.white.withValues(alpha: 0.12)
-                                  : Colors.blue.withValues(alpha: 0.12),
+                                  ? Colors.white.withValues(alpha: 0.15)
+                                  : Colors.blue.withValues(alpha: 0.15),
                             ),
                             boxShadow: [
                               BoxShadow(
                                 blurRadius: 30,
                                 spreadRadius: 2,
                                 color: Colors.black.withValues(
-                                  alpha: isDark ? 0.25 : 0.08,
+                                  alpha: isDark ? 0.35 : 0.15,
                                 ),
                               ),
                             ],
@@ -418,7 +465,8 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
                                 'Secure Officer Login',
                                 style: TextStyle(
                                   fontSize: 24,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.3,
                                   color: isDark ? Colors.white : Colors.black87,
                                 ),
                               ),
@@ -428,6 +476,8 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
                               Text(
                                 'Access your railway management module',
                                 style: TextStyle(
+                                  fontSize: 14,
+                                  letterSpacing: 0.3,
                                   color: isDark
                                       ? Colors.white70
                                       : Colors.black54,
@@ -439,6 +489,10 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
                               // USER ID
                               TextField(
                                 controller: _userIdController,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
+                                ),
                                 decoration: InputDecoration(
                                   labelText: 'User ID / Officer Code',
                                   prefixIcon: const Icon(Icons.person_outline),
@@ -454,6 +508,10 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
                               TextField(
                                 controller: _passwordController,
                                 obscureText: !_passwordVisible,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
+                                ),
                                 decoration: InputDecoration(
                                   labelText: 'Password',
                                   prefixIcon: const Icon(Icons.lock_outline),
@@ -512,6 +570,7 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
                                   _branchDescription(_selectedBranch),
                                   style: TextStyle(
                                     fontSize: 12,
+                                    letterSpacing: 0.2,
                                     color: isDark
                                         ? Colors.white60
                                         : Colors.black54,
@@ -540,6 +599,10 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
                                     _isLoading
                                         ? 'AUTHENTICATING...'
                                         : 'LOGIN TO PORTAL',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.2,
+                                    ),
                                   ),
                                   style: ElevatedButton.styleFrom(
                                     shape: RoundedRectangleBorder(
@@ -569,14 +632,26 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
                           ),
                         ),
 
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 28),
+
+                        // TIME & DATE (AT THE END)
+                        _infoCard(
+                          icon: Icons.access_time,
+                          title: _currentTime,
+                          subtitle: _currentDate,
+                          isDark: isDark,
+                        ),
+
+                        const SizedBox(height: 14),
 
                         // VERSION
-                        Text(
+                        const Text(
                           'v2.4 VB-LTS',
                           style: TextStyle(
                             fontSize: 11,
-                            color: isDark ? Colors.white38 : Colors.black38,
+                            letterSpacing: 1,
+                            color: Colors.white60,
+                            shadows: textShadow,
                           ),
                         ),
                       ],
@@ -598,41 +673,41 @@ class _IRTCLoginPageState extends State<IRTCLoginPage> {
     required bool isDark,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : Colors.white.withValues(alpha: 0.7),
+        color: Colors.black.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.black.withValues(alpha: 0.06),
-        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 19, color: Colors.blue),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
+          Icon(icon, size: 20, color: Colors.lightBlueAccent),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 9,
-                  color: isDark ? Colors.white54 : Colors.black54,
+                Text(
+                  subtitle,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    letterSpacing: 0.5,
+                    color: Colors.white70,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
